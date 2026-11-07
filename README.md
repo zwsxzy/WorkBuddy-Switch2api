@@ -42,8 +42,56 @@ OpenAI 兼容的本地网关：多账号池轮转、按分组挑选出站账号�
 ### 下载
 
 - **桌面 App** —— 从 [GitHub Releases](https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest) 下载 **Windows 安装包**（推荐日常使用）。本仓库的 CI 目前只发布 Windows 产物，macOS / Linux 请自行构建（见下方「桌面 App」）
+- **源码** —— 三种取法，见下方「从源码获取与更新」
 - **npm / webui** —— 浏览器操作界面，从本仓库自行构建安装，见下方「快速开始」
 - **在线演示** —— [GitHub Pages 只读演示](https://zwsxzy.github.io/WorkBuddy-Switch2api/)（账号、积分与请求记录均为虚构数据，所有业务操作已禁用）
+
+## 从源码获取与更新
+
+源码随时可取，三种方式按用途选：
+
+```bash
+# 1) git clone（推荐：可直接 pull 增量更新，保留完整历史）
+git clone https://github.com/zwsxzy/WorkBuddy-Switch2api.git
+cd WorkBuddy-Switch2api
+
+# 2) 只要某个版本的源码快照（不用 git，解压即用）
+curl -LO https://github.com/zwsxzy/WorkBuddy-Switch2api/archive/refs/tags/v1.6.31.zip
+#   或始终拿主干最新：archive/refs/heads/main.zip
+
+# 3) 任意版本页右侧 Code → Download ZIP（GitHub 自动生成，无需登录）
+```
+
+克隆之后更新到最新代码：
+
+```bash
+git pull --ff-only          # 只拉快，不做合并，避免本地产出冲突
+```
+
+从解压出来的源码构建（与 clone 完全等价，只是没有 `.git`）：
+
+```bash
+npm ci                      # 按 lockfile 精确还原依赖
+npm run build               # tsc + vite，产物在 dist/
+```
+
+> **版本对应关系**：每个 Release 对应一个 `vX.Y.Z` tag，tag 内容即该版本源码。
+> 想回到某个历史版本：`git checkout v1.6.31`。
+
+### 自己发一个版本（维护者）
+
+版本号有 17 处需要同步，别手改 —— 用脚本一次改完并校验：
+
+```bash
+node scripts/version.mjs set 1.6.32   # 同步 Cargo.toml / package.json / tauri.conf.json / npm 包 / lock 文件
+node scripts/version.mjs check        # 17 处必须全部一致，不一致会 exit 1
+git add -A && git commit -m "版本 1.6.32"
+git tag -a v1.6.32 -m "v1.6.32"
+git push origin main v1.6.32          # 推送 tag 即触发 CI：构建 Windows 安装包 + 推送 GHCR 镜像 + 生成 Release
+```
+
+> tag 名必须与仓库内版本号一致（CI 会校验，不一致直接失败）。
+> 本机没有 `cargo` 时，脚本会自动跳过 `Cargo.lock` 刷新并给出警告，构建前补跑一次 `cargo metadata` 即可。
 
 ## 快速开始
 
@@ -120,12 +168,25 @@ docker compose up -d --build
 | 平台 | 安装包 | 安装方式 |
 | --- | --- | --- |
 | Windows x64 | `WorkBuddy-Switch2api_<版本>_x64-setup.exe` | 运行安装程序并按提示完成安装 |
-| macOS Apple Silicon / Intel | 需自行构建（`npm run tauri build -- --bundles app`，产物为 `.app`，DMG 可自行打包） | 本仓库 CI 暂不产出 macOS 包：需要 macOS runner |
+| macOS Apple Silicon / Intel | 需在 Mac 上自行构建，见下方命令 | 产物为 `.app`，可自行打成 DMG |
 | Linux x64 | 需自行构建（`npm run tauri build -- --bundles deb,appimage`）；或用 Docker 常驻部署，见下方「Docker」 | — |
 
-> **为什么只有 Windows**：macOS 构建依赖 macOS runner，当前账号下 runner 不可用（job 一启动即被 cancel），
-> 会把整个 release 拖成 cancelled，所以发版矩阵收敛为仅 Windows。Linux 可手动触发
-> `build` workflow 的 `linux-x64` 选项补产，但不会进 Release 资产。
+> **为什么只有 Windows**：macOS 构建依赖 macOS runner。实测该 GitHub 账号拿不到 macOS runner
+> —— `macos-14` 会立即报 `The configuration 'macos-14-arm64-us-default' is not supported` 并被取消，
+> `macos-13` 排队不调度；若强留在矩阵里，整个 release 会变成 cancelled，Windows 包也发布不出去。
+> Linux 可手动触发 `build` workflow 的 `linux-x64` 选项补产，但不进 Release 资产。
+
+在 Mac 上自行产出安装包（在 clone 下来的源码目录里执行）：
+
+```bash
+npm ci
+npm run build                                       # 先出 dist/，Tauri 构建需要它
+npm run tauri -- build --bundles app                # 产物：src-tauri/target/release/bundle/macos/WorkBuddy-Switch2api.app
+# 想直接要 DMG，也可用 --bundles dmg（首次需允许 Finder 自动化）
+```
+
+> 自编译版**不会**被远端更新覆盖：`createUpdaterArtifacts` 只在 CI 用签名密钥时才产出清单，
+> 本地构建默认不带 `.sig`，因此这条产物不会参与应用内自动更新。
 
 macOS 首次启动若提示无法验证开发者，先在 Finder 中按住 Control 点击应用并选择「打开」，或前往「系统设置 → 隐私与安全性」选择「仍要打开」。仅当安装包来自上述官方 Releases、且系统仍提示「已损坏」时，再执行：
 

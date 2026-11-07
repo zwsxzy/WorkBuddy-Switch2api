@@ -94,10 +94,11 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
   async fetchAll() {
     set({ loading: true, error: null });
     try {
-      const [status, { accounts }] = await Promise.all([fetchStatus(), api.getAccounts()]);
+      const [status, res] = await Promise.all([fetchStatus(), api.getAccounts()]);
+      const accounts = Array.isArray(res?.accounts) ? res.accounts : [];
       set({ status, accounts, loading: false });
     } catch (e) {
-      set({ error: api.asError(e), loading: false });
+      set({ error: api.asError(e), loading: false, accounts: get().accounts ?? [] });
     }
   },
 

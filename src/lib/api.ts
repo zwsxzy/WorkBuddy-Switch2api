@@ -254,6 +254,10 @@ async function httpCall<T>(cmd: string, args?: Record<string, unknown>): Promise
   } catch {
     throw new Error(`无法连接 workbuddy-switch 服务（${API_BASE}），请先运行 \`workbuddy-switch\``);
   }
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('无法连接 workbuddy-switch 后端服务 (' + API_BASE + ')，请确认后端已启动');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) {

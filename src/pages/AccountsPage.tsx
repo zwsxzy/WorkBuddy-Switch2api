@@ -127,7 +127,8 @@ async function fetchTravelMap(
 
 export default function AccountsPage() {
   const {
-    accounts,
+    accounts: rawAccounts,
+
     status,
     loading,
     error,
@@ -144,6 +145,7 @@ export default function AccountsPage() {
     clientStatus,
     setClientStatus,
   } = useAccountsStore();
+  const accounts = Array.isArray(rawAccounts) ? rawAccounts : [];
   const [oauthOpen, setOauthOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);

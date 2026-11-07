@@ -613,7 +613,7 @@ cargo build --release -p wb-switch-rust
 # 产物：target/release/wb-switch-rust.exe
 ```
 
-> 仓库归属已改为 `github.com/cv-superding/WorkBuddy-Switch2api`。
+> 仓库归属为 `github.com/zwsxzy/WorkBuddy-Switch2api`（衍生自 `cv-superding/WorkBuddy-Switch2api`）。
 > `src-tauri/tauri.conf.json` 里 `updater.endpoints` 当前为空、
 > `createUpdaterArtifacts` 为 false —— 这样自编译版不会被任何远端更新覆盖。
 > 想开启自动更新时，把 endpoints 指向自己仓库的 releases 即可。

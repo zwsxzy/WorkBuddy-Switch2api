@@ -1,4 +1,4 @@
-# wb-switch 常驻部署（容器）· 用 GHCR 现成镜像
+﻿# wb-switch 常驻部署（容器）· 用 GHCR 现成镜像
 #
 # 与 docker-compose.yml 的区别：这个文件**不构建**，直接拉 CI 推上来的镜像。
 # 适合不想在本机编译 15 分钟的机器（NAS / 小主机）。
@@ -9,11 +9,11 @@
 #   # 浏览器打开 http://<这台机器的IP>:57890/?token=$WB_SWITCH_TOKEN
 #
 # 想固定版本而不是跟 latest：把 image 换成
-#   ghcr.io/cv-superding/workbuddy-switch2api:1.7.0
+#   ghcr.io/zwsxzy/workbuddy-switch2api:1.7.0
 
 services:
   wb-switch:
-    image: ghcr.io/cv-superding/workbuddy-switch2api:latest
+    image: ghcr.io/zwsxzy/workbuddy-switch2api:latest
     container_name: wb-switch
     restart: unless-stopped
     ports:

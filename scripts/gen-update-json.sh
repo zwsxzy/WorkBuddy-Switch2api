@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # 生成 tauri updater 版本清单 latest-<os>-<arch>.json
 # 用法：
 #   UPDATE_OS=macos UPDATE_ARCH=aarch64 sh scripts/gen-update-json.sh [owner] [repo]
@@ -8,7 +8,7 @@
 set -e
 cd "$(dirname "$0")/.." || exit 1
 
-OWNER="${1:-cv-superding}"
+OWNER="${1:-zwsxzy}"
 REPO="${2:-WorkBuddy-Switch2api}"
 VERSION="${UPDATE_VERSION:-$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')}"
 UPDATE_OS="${UPDATE_OS:-macos}"

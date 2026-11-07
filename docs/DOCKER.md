@@ -11,31 +11,43 @@
 
 ### 方式一：用现成镜像（推荐）
 
-CI 在每次发版时会把镜像推到 GHCR，直接拉就行，不用本地编译：
+CI 在每次发版（打 tag）时会把镜像推到 GHCR，直接拉就行，不用本地编译：
 
 ```bash
+# 访问口令，必填：非回环监听又没口令时，服务会直接拒绝启动
 export WB_SWITCH_TOKEN=$(openssl rand -hex 16)
 
+# 57890 = webui；7863 = 国内版反代；7864 = 国际版反代
 docker run -d --name wb-switch --restart unless-stopped \
   -p 57890:57890 -p 7863:7863 -p 7864:7864 \
   -e WB_SWITCH_TOKEN=$WB_SWITCH_TOKEN \
   -e TZ=Asia/Shanghai \
   -v wb-switch-data:/data \
-  ghcr.io/cv-superding/workbuddy-switch2api:latest
+  ghcr.io/zwsxzy/workbuddy-switch2api:latest
 
 # 浏览器打开： http://<这台机器的IP>:57890/?token=$WB_SWITCH_TOKEN
 ```
 
-也可以用 `docker-compose.ghcr.yml`（免构建）：
+也可以用 `docker-compose.ghcr.yml`（免构建，端口 / 卷 / 健康检查都在里面配好了）：
 
 ```bash
 export WB_SWITCH_TOKEN=$(openssl rand -hex 16)
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
+> **镜像什么时候可用**：GHCR 镜像由 CI 在**打 tag 发版时**才构建推送，所以**首次发版之前这个地址拉不到**
+> （报 `manifest unknown` / `not found` 属正常），请先用下面的「方式二」本地构建。
+>
+> **拉取被拒（`denied` / `unauthorized`）**：说明包的可见性仍是 private，需要手动放开一次 ——
+> GitHub → 个人头像 → `Packages` → 打开 `workbuddy-switch2api` → `Package settings`
+> → `Change visibility` → 选 `Public`。公开之后 `docker pull` 无需登录。
+
 ### 方式二：本地构建
 
 ```bash
+git clone https://github.com/zwsxzy/WorkBuddy-Switch2api.git
+cd WorkBuddy-Switch2api
+
 export WB_SWITCH_TOKEN=$(openssl rand -hex 16)
 docker compose up -d --build      # 首次 Rust 全量编译，约 10~20 分钟
 docker compose logs -f

@@ -12,8 +12,6 @@ on:
         options:
           - all
           - win-x64
-          - mac-arm64
-          - mac-x64
           - linux-x64
 
 permissions:
@@ -33,31 +31,11 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os
+          # 发版（打 tag）只构建 Windows：macOS 需要 macOS runner，当前账号下 runner
+          # 配置不可用（job 一启动就被 cancel，报 "configuration 'macos-14-...' is not
+          # supported"），会把整个 release 拖成 cancelled；Linux 保留在手动触发里备用。
+          # 需要 macOS 时补回矩阵并确认 runner 可用。
           all_platforms = [
-              {
-                  "name": "mac-arm64",
-                  "os": "macos-14",
-                  "target": "aarch64-apple-darwin",
-                  "cli_bin": "wb-switch-darwin-arm64",
-                  "platform_tag": "darwin-arm64",
-                  "bundles": "app",
-                  "update_os": "macos",
-                  "update_arch": "aarch64",
-                  "update_bundle": "macos",
-                  "update_archive_name": "workbuddy-switch-macos-aarch64.app.tar.gz",
-              },
-              {
-                  "name": "mac-x64",
-                  "os": "macos-14",
-                  "target": "x86_64-apple-darwin",
-                  "cli_bin": "wb-switch-darwin-x64",
-                  "platform_tag": "darwin-x64",
-                  "bundles": "app",
-                  "update_os": "macos",
-                  "update_arch": "x86_64",
-                  "update_bundle": "macos",
-                  "update_archive_name": "workbuddy-switch-macos-x86_64.app.tar.gz",
-              },
               {
                   "name": "win-x64",
                   "os": "windows-latest",
@@ -87,7 +65,10 @@ jobs:
           ]
           event = os.environ.get("EVENT_NAME", "")
           platform = (os.environ.get("PLATFORM") or "all").strip()
-          if event != "workflow_dispatch" or platform in ("", "all"):
+          if event != "workflow_dispatch":
+              # 打 tag 发版：只出 Windows 安装包（见上面的说明）
+              selected = [p for p in all_platforms if p["name"] == "win-x64"]
+          elif platform in ("", "all"):
               selected = all_platforms
           else:
               selected = [p for p in all_platforms if p["name"] == platform]
@@ -364,7 +345,7 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-          pattern: "{linux-x64,mac-arm64,mac-x64,win-x64}"
+          pattern: "{linux-x64,win-x64}"
 
       - name: Merge updater manifests
         run: |
@@ -373,9 +354,10 @@ jobs:
             # 缺平台是静默故障（Linux 曾因此收不到更新）→ 合并后强制校验键齐全
             python3 - <<'PY'
           import json, pathlib
-          need = {"darwin-aarch64", "darwin-x86_64", "linux-x86_64",
-                  "linux-x86_64-appimage", "linux-x86_64-deb",
-                  "windows-x86_64", "windows-x86_64-nsis"}
+          # 发版默认只出 Windows；Linux 由手动触发补齐。这里只校验「已经产出了哪些」，
+          # 不强制要求全部平台都齐全 —— 否则只发 Windows 时会被误判为清单缺键。
+          # 恢复 macOS 构建时把 darwin-* 两个键加回 need 集合即可。
+          need = {"windows-x86_64", "windows-x86_64-nsis"}
           p = pathlib.Path("artifacts/latest.json")
           have = set(json.loads(p.read_text(encoding="utf-8"))["platforms"])
           missing = sorted(need - have)

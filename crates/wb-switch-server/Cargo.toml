@@ -1,9 +1,9 @@
-[package]
+﻿[package]
 name = "wb-switch-server"
 version.workspace = true
 edition = "2021"
-authors = ["cv-superding"]
-repository = "https://github.com/cv-superding/WorkBuddy-Switch2api"
+authors = ["zwsxzy"]
+repository = "https://github.com/zwsxzy/WorkBuddy-Switch2api"
 license = "MIT"
 description = "wb-switch HTTP server + CLI（npm 安装形态：wb-switch 命令启动本地 webui）"
 

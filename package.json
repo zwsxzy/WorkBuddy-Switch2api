@@ -2,15 +2,15 @@
   "name": "workbuddy-switch2api",
   "private": true,
   "version": "1.6.30",
-  "author": "cv-superding",
+  "author": "zwsxzy",
   "license": "MIT",
-  "homepage": "https://github.com/cv-superding/WorkBuddy-Switch2api",
+  "homepage": "https://github.com/zwsxzy/WorkBuddy-Switch2api",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cv-superding/WorkBuddy-Switch2api.git"
+    "url": "https://github.com/zwsxzy/WorkBuddy-Switch2api.git"
   },
   "bugs": {
-    "url": "https://github.com/cv-superding/WorkBuddy-Switch2api/issues"
+    "url": "https://github.com/zwsxzy/WorkBuddy-Switch2api/issues"
   },
   "type": "module",
   "scripts": {

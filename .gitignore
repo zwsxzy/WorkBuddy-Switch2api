@@ -52,6 +52,13 @@ icons-original/
 # 本机专用的一键构建脚本（里面写死了本机路径，不入库）
 build-and-deploy.bat
 
+# 本机打包出来的可执行目录（app/wb-switch-rust.exe 等 ~23MB，来自本地构建）
+/app/
+
+# 本机双击启动脚本（指向本地构建产物 / 个人习惯，不入库；命令见 README）
+启动前端开发服务.bat
+启动桌面端.bat
+
 # 构建前端时被改名移走的临时 dist（删除拦截器绕行产物，见构建说明）
 dist-*
 dist.bak-*

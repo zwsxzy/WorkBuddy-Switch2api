@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/cv-superding/WorkBuddy-Switch2api/releases/latest"><img src="https://img.shields.io/github/v/release/cv-superding/WorkBuddy-Switch2api?label=release" alt="Latest release" /></a>
+  <a href="https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest"><img src="https://img.shields.io/github/v/release/zwsxzy/WorkBuddy-Switch2api?label=release" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4b5563.svg" alt="Platforms: Windows / macOS / Linux" />
   <img src="https://img.shields.io/badge/built%20with-Tauri%20%2B%20Rust-24C8DB.svg" alt="Built with Tauri + Rust" />
 </p>
@@ -18,6 +18,11 @@
 <p align="center">
   <sub>顶部横幅为 AI 生成的手绘风插画，非软件界面截图。</sub>
 </p>
+
+> **来源声明**：本仓库是 [cv-superding/WorkBuddy-Switch2api](https://github.com/cv-superding/WorkBuddy-Switch2api)
+> 的公开衍生版本，代码基于 [changexbc/workbuddy-switch](https://github.com/changexbc/workbuddy-switch)（MIT）
+> 与 cv-superding 的改造，原版权归原作者所有。本仓库仅作为便于部署的衍生发布（镜像 / 安装包 / 在线演示由
+> zwsxzy 维护），遵循同样的 MIT 许可，不改动原始许可与版权声明。
 
 WorkBuddy / CodeBuddy CLI / CodeBuddy CN IDE 账号切换桌面 App（Tauri），并在同一个进程里内置了一个
 OpenAI 兼容的本地网关：多账号池轮转、按分组挑选出站账号、请求用量一目了然。
@@ -36,9 +41,9 @@ OpenAI 兼容的本地网关：多账号池轮转、按分组挑选出站账号�
 
 ### 下载
 
-- **桌面 App** —— 从 [GitHub Releases](https://github.com/cv-superding/WorkBuddy-Switch2api/releases/latest) 下载 macOS / Windows / Linux 安装包（推荐日常使用）
+- **桌面 App** —— 从 [GitHub Releases](https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest) 下载 macOS / Windows / Linux 安装包（推荐日常使用）
 - **npm / webui** —— 浏览器操作界面，从本仓库自行构建安装，见下方「快速开始」
-- **在线演示** —— [GitHub Pages 只读演示](https://cv-superding.github.io/WorkBuddy-Switch2api/)（账号、积分与请求记录均为虚构数据，所有业务操作已禁用）
+- **在线演示** —— [GitHub Pages 只读演示](https://zwsxzy.github.io/WorkBuddy-Switch2api/)（账号、积分与请求记录均为虚构数据，所有业务操作已禁用）
 
 ## 快速开始
 
@@ -67,18 +72,40 @@ webui 界面与桌面 App 一致：WorkBuddy / CodeBuddy CLI / CodeBuddy IDE 账
 想让「API 反代 + 自动签到 + 自动轮换」常年挂着、不占用一台有图形界面的机器，用容器最省事：
 
 ```bash
-export WB_SWITCH_TOKEN=$(openssl rand -hex 16)   # 访问口令，必填
+# 访问口令，必填（非回环监听时没有口令服务会拒绝启动）
+export WB_SWITCH_TOKEN=$(openssl rand -hex 16)
 
-# 用现成镜像（CI 每次发版推到 GHCR）
-docker compose -f docker-compose.ghcr.yml up -d
-
-# 或者本地构建（首次 Rust 全量编译，约 10~20 分钟）
-docker compose up -d --build
+# 直接用 GHCR 镜像（免构建）：57890 = webui，7863 / 7864 = 国内版 / 国际版反代
+docker run -d --name wb-switch --restart unless-stopped \
+  -p 57890:57890 -p 7863:7863 -p 7864:7864 \
+  -e WB_SWITCH_TOKEN=$WB_SWITCH_TOKEN \
+  -e TZ=Asia/Shanghai \
+  -v wb-switch-data:/data \
+  ghcr.io/zwsxzy/workbuddy-switch2api:latest
 
 # 浏览器打开： http://<这台机器的IP>:57890/?token=$WB_SWITCH_TOKEN
 ```
 
+从源码构建的最短路径（首次 Rust 全量编译，约 10~20 分钟）：
+
+```bash
+git clone https://github.com/zwsxzy/WorkBuddy-Switch2api.git
+cd WorkBuddy-Switch2api
+docker compose up -d --build
+```
+
+克隆仓库之后也可以不构建、直接用现成镜像：`docker compose -f docker-compose.ghcr.yml up -d`
+（同样读上面那个 `WB_SWITCH_TOKEN`，端口 / 卷 / 健康检查都已经写在文件里）。
+
 数据全在命名卷 `wb-switch-data` 里，容器重建不丢。镜像只跑 webui + API 反代这条常驻通道。
+
+> **镜像什么时候可用**：GHCR 上的镜像由 CI 在**打 tag 发版时**才构建推送，所以**首次发版之前**
+> `ghcr.io/zwsxzy/workbuddy-switch2api` 拉不到（报 `manifest unknown` / `not found` 属正常），
+> 这时用上面的「从源码构建」。
+>
+> **拉取被拒（`denied` / `unauthorized`）**：说明包的可见性仍是 private，去
+> GitHub → 个人头像 → `Packages` → 打开 `workbuddy-switch2api` 包页面 → `Package settings`
+> → `Change visibility` → 选 `Public`，公开后拉取无需登录。
 
 细节（环境变量、端口、反代怎么对外、容器里哪些功能用不了、安全说明）见 **[docs/DOCKER.md](docs/DOCKER.md)**。
 
@@ -88,7 +115,7 @@ docker compose up -d --build
 
 ### 桌面 App
 
-前往 [GitHub Releases](https://github.com/cv-superding/WorkBuddy-Switch2api/releases/latest) 下载对应平台的安装包：
+前往 [GitHub Releases](https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest) 下载对应平台的安装包：
 
 | 平台 | 安装包 | 安装方式 |
 | --- | --- | --- |
@@ -385,6 +412,9 @@ WorkBuddy 的更新缓存是**按用户放的、不分产品**：
 - **[changexbc/workbuddy-switch](https://github.com/changexbc/workbuddy-switch)** —— 账号切换、积分与 Token 统计、
   自动签到、自动轮换等绝大部分功能的作者。本仓库在此之上做了改造与扩展（API 反代、账号分组、反代用量统计、
   国内版 / 国际版双档位），在此致谢。
+- **[cv-superding/WorkBuddy-Switch2api](https://github.com/cv-superding/WorkBuddy-Switch2api)** —— 上游来源，本仓库直接基于
+  其上一步的改造版本发布，API 反向代理、国内版 / 国际版双档位、Docker 常驻部署等能力来自这一分支的整理与扩展，
+  原版权归其作者，一并致谢。
 - **[Harvey-Will/workbuddy-tools](https://github.com/Harvey-Will/workbuddy-tools)**（MIT）—— 国际版（WorkBuddy AI）
   的数据目录划分与客户端 `account-snapshot.json` 切换机制参考了该项目的 `core/editions.py` 与 `core/accounts.py`。
   相关代码为独立重写，特此声明来源，遵循 MIT 许可。
@@ -406,7 +436,7 @@ WorkBuddy 的更新缓存是**按用户放的、不分产品**：
 
 ## 许可
 
-[MIT](./LICENSE) © 2026 wb-switch / cv-superding
+[MIT](./LICENSE) © 2026 wb-switch / cv-superding / zwsxzy
 
 第三方声明（上游与参考项目的版权归属）见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)。
 

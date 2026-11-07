@@ -7,7 +7,7 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest"><img src="https://img.shields.io/github/v/release/zwsxzy/WorkBuddy-Switch2api?label=release" alt="Latest release" /></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4b5563.svg" alt="Platforms: Windows / macOS / Linux" />
+  <img src="https://img.shields.io/badge/platform-Windows-4b5563.svg" alt="Platforms: Windows（macOS / Linux 可自行构建）" />
   <img src="https://img.shields.io/badge/built%20with-Tauri%20%2B%20Rust-24C8DB.svg" alt="Built with Tauri + Rust" />
 </p>
 
@@ -41,7 +41,7 @@ OpenAI 兼容的本地网关：多账号池轮转、按分组挑选出站账号�
 
 ### 下载
 
-- **桌面 App** —— 从 [GitHub Releases](https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest) 下载 macOS / Windows / Linux 安装包（推荐日常使用）
+- **桌面 App** —— 从 [GitHub Releases](https://github.com/zwsxzy/WorkBuddy-Switch2api/releases/latest) 下载 **Windows 安装包**（推荐日常使用）。本仓库的 CI 目前只发布 Windows 产物，macOS / Linux 请自行构建（见下方「桌面 App」）
 - **npm / webui** —— 浏览器操作界面，从本仓库自行构建安装，见下方「快速开始」
 - **在线演示** —— [GitHub Pages 只读演示](https://zwsxzy.github.io/WorkBuddy-Switch2api/)（账号、积分与请求记录均为虚构数据，所有业务操作已禁用）
 
@@ -119,10 +119,13 @@ docker compose up -d --build
 
 | 平台 | 安装包 | 安装方式 |
 | --- | --- | --- |
-| macOS Apple Silicon（M 系列，arm64） | `WorkBuddy-Switch2api_<版本>_aarch64.dmg` | 打开 DMG，将 `WorkBuddy-Switch2api.app` 拖入「应用程序」 |
-| macOS Intel（x86_64） | `WorkBuddy-Switch2api_<版本>_x86_64.dmg` | 打开 DMG，将 `WorkBuddy-Switch2api.app` 拖入「应用程序」 |
 | Windows x64 | `WorkBuddy-Switch2api_<版本>_x64-setup.exe` | 运行安装程序并按提示完成安装 |
-| Linux x64 | `WorkBuddy-Switch2api_<版本>_amd64.deb` / `WorkBuddy-Switch2api_<版本>_amd64.AppImage` | Debian/Ubuntu 安装 `.deb`；其他发行版可给 AppImage 添加执行权限后直接运行 |
+| macOS Apple Silicon / Intel | 需自行构建（`npm run tauri build -- --bundles app`，产物为 `.app`，DMG 可自行打包） | 本仓库 CI 暂不产出 macOS 包：需要 macOS runner |
+| Linux x64 | 需自行构建（`npm run tauri build -- --bundles deb,appimage`）；或用 Docker 常驻部署，见下方「Docker」 | — |
+
+> **为什么只有 Windows**：macOS 构建依赖 macOS runner，当前账号下 runner 不可用（job 一启动即被 cancel），
+> 会把整个 release 拖成 cancelled，所以发版矩阵收敛为仅 Windows。Linux 可手动触发
+> `build` workflow 的 `linux-x64` 选项补产，但不会进 Release 资产。
 
 macOS 首次启动若提示无法验证开发者，先在 Finder 中按住 Control 点击应用并选择「打开」，或前往「系统设置 → 隐私与安全性」选择「仍要打开」。仅当安装包来自上述官方 Releases、且系统仍提示「已损坏」时，再执行：
 
@@ -333,13 +336,13 @@ Token 统计页按来源展示 Token 总览和每日趋势，覆盖 WorkBuddy、
 
 > webui 模式：由启动服务的终端进程权限决定；若终端已授权完全磁盘访问则无需额外操作。
 
-### 应用内自动更新（Windows / macOS / Linux）
+### 应用内自动更新（Windows）
 
 发布产物带 Tauri updater 签名与清单，装过一次以后可以在应用内直接升级：
 
-- 每次 tag 发版，CI 会为四个平台产出 `.sig` 签名与 `latest.json` / `latest-<target>-<arch>.json`
+- 每次 tag 发版，CI 会产出 `.sig` 签名与 `latest.json` / `latest-windows-x86_64.json`
 - 客户端从我们自己仓库的 Releases 拉清单（`tauri.conf.json` → `plugins.updater.endpoints`）
-- Linux 有两种安装形态，各发一份清单：AppImage（`latest-linux-x86_64.json`）与 deb（`latest-linux-deb-x86_64.json`）
+- 本仓库目前只发布 Windows 清单；macOS / Linux 的清单在对应平台构建重新启用后才会出现
 
 维护者须知（换签名密钥时）：
 

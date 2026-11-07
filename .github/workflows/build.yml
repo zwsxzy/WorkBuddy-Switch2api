@@ -213,7 +213,10 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           if ! [[ "$VER" =~ ^[0-9] ]]; then
-            VER=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+            # 版本真源是根 Cargo.toml 的 [workspace.package]；成员 crate 用的是
+            # `version.workspace = true`（没有字面版本号），拿它 grep 会得到这串字母，
+            # 导致 NSIS 文件名比对失败、误报 "stale Windows installer"。
+            VER=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
           fi
           BUNDLE_ROOT="target/${{ matrix.target }}/release/bundle"
           # cargo cache 会保留旧 NSIS/DMG/AppImage；不清理就会把 0.1.17 一类产物带进 Release。
@@ -251,7 +254,8 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           if ! [[ "$VER" =~ ^[0-9] ]]; then
-            VER=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+            # 同上：版本真源在根 Cargo.toml，不能读成员的 `version.workspace = true`
+            VER=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
           fi
           echo "updater bundle dir: $BUNDLE_DIR (version $VER)"
           ls -la "$BUNDLE_DIR" || true

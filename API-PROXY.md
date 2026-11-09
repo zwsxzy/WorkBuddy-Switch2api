@@ -314,6 +314,17 @@ DSH 自带原生开关 **`includeHarnessIdentity`**，关掉它（或把那段�
 
 **反代处理（v1.6.20）**：不擅改默认请求，只在**自愈重试**里抹（见下节）。
 
+> 🔴 **2026-11-09 修正：这条结论对 DSH 不成立。**
+> 用假模型 oracle 直连国内版实测（见
+> [`docs/notes/2026-11-09-system角色长正文才是unapproved-channel真凶.md`](docs/notes/2026-11-09-system角色长正文才是unapproved-channel真凶.md)）：
+>
+> - 把 `DeepSeek`+`Harness` / `DeepSeekRuntime` 全部抹掉、裸 `@` 也换成全角 —— **照样 `11-128`**；
+> - 同一份正文把 `role: "system"` 换成 `user` —— **立刻通过（3/3）**；
+> - 12 000 字纯填充作 system 通过，2 500 字真实正文被拦 —— **判的不是关键词、也不是长度，而是「system 角色 + 长指令正文」这个组合**。
+>
+> ⇒ 让用户去关 `includeHarnessIdentity` **是无效建议**：实测该开关早已为 `false`，
+> 提示词里那两个词来自 runtime-context 段而非 harness identity 段，且删掉它们也不解决问题。
+
 ### 自愈重试（v1.6.20）
 
 收到 `unapproved channel`（负载变体）时，先用**最大强度归一化**重造一份请求再试一次：
@@ -325,6 +336,11 @@ DSH 自带原生开关 **`includeHarnessIdentity`**，关掉它（或把那段�
 
 只做一次，避免死循环；改动记进 `degraded` 的 `aggressive-normalize`。
 `request illegal`（客户端身份变体）**不**走自愈 —— 改负载对它无效。
+
+> 🔴 **2026-11-09 实测：上面四步对 DSH 的 system 长正文全部无效。**
+> 真正生效的是第 5 类动作 —— **把 `system` 降级为 `user`**（同一正文，3/3 通过）。
+> 而现有第 1 步方向恰好相反：它把非标准角色**收敛成 `system`**。
+> 修复建议见 [docs/notes/2026-11-09-…](docs/notes/2026-11-09-system角色长正文才是unapproved-channel真凶.md)。
 
 > 设计取舍：默认路径绝不改写用户提示词内容（那是用户资产），
 > 只有在「已经被拦、反正也发不出去」的前提下才做破坏性归一化。

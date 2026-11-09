@@ -350,6 +350,106 @@ fn neutralize_domestic_tool_descriptions(tools: &mut Value, degraded: &mut Vec<S
     }
 }
 
+/// `system` 正文超过多少字符才降级成 `user`（见 [`demote_long_system`]）。
+///
+/// 2026-11-09 实测（国内版 `codebuddy.cn`，假模型 oracle，零额度消耗）：
+///
+/// | system 正文 | 结果 |
+/// |---|---|
+/// | `"x" * 12_000`（纯填充） | ✅ `11102` 通过 |
+/// | `"这" * 8_000`（纯填充） | ✅ `11102` 通过 |
+/// | DSH 真实提示词**前 2 000 字** | ✅ `11102` 通过 |
+/// | DSH 真实提示词**前 2 500 字** | ❌ `11128` |
+/// | DSH 真实提示词全文（12 873 字） | ❌ `11128` |
+///
+/// ⇒ 判据是「`system` 角色 + 足够长的指令正文」这个**组合**：既不是关键词
+/// （12 000 字纯填充能过），也不只是长度。阈值取 2 000，比实测边界留余量。
+const SYSTEM_DEMOTE_THRESHOLD: usize = 2_000;
+
+/// 降级后留下的占位 system 正文。
+///
+/// 不能直接删掉 system：部分上游（国际版）要求**首条必须是 `system`**，
+/// 删了会被 `11128 first message is not system prompt` 打回
+/// （见 [`ensure_leading_system`]）。一句无害的开场白既满足格式，又不带指令口吻。
+const DEMOTED_SYSTEM_PLACEHOLDER: &str = "You are a helpful assistant.";
+
+/// 把**过长的 `system` 正文降级为 `user`** —— `11128 unapproved channel` 的真解。
+///
+/// 为什么必须做：上游渠道校验把「`system` 角色承载长指令正文」判成非官方客户端。
+/// 2026-11-09 单变量实测（同一份正文、同一套出站头、同一个号）：
+///
+/// | 请求形态 | 结果 |
+/// |---|---|
+/// | 全文作 `role:"system"` | ❌ `11128`（3/3） |
+/// | **同一全文作 `role:"user"`** | ✅ **`11102` 通过（3/3）** |
+/// | 全文但抹掉身份词 + 裸 `@` | ❌ `11128`（3/3） |
+/// | system 短开场 + 正文并入 user | ✅ 通过（3/3） |
+/// | 正文拆成两条 system | ❌ `11128`（3/3） |
+///
+/// 🔴 这解释了「最大强度归一化」为什么注定失败：它做的是角色收敛（把非标准角色
+/// **收敛成 system**）、去 `name`、拍平内容块、抹身份声明 —— 方向全错。
+/// 真正有效的动作是**把 system 降级为 user**，而它从未执行。
+///
+/// 语义代价极小：模型照样读到同样的正文，只是不再处于「系统指令」优先级。
+/// 这类客户端塞进 system 的本来就是背景说明，不是硬约束。
+///
+/// 返回 `None` = 没有需要降级的（短 system 完全不动，避免无谓改写用户资产）。
+fn demote_long_system(messages: &mut Value, degraded: &mut Vec<String>) -> Option<usize> {
+    let Some(arr) = messages.as_array_mut() else {
+        return None;
+    };
+    let mut moved = 0usize;
+    for i in 0..arr.len() {
+        if arr[i].get("role").and_then(Value::as_str) != Some("system") {
+            continue;
+        }
+        let Some(text) = arr[i].get("content").and_then(Value::as_str) else {
+            continue;
+        };
+        if text.chars().count() <= SYSTEM_DEMOTE_THRESHOLD {
+            continue;
+        }
+        let body = text.to_string();
+        arr[i]["content"] = Value::String(DEMOTED_SYSTEM_PLACEHOLDER.to_string());
+        // 正文前移到紧随其后的第一条 user：并入而非新起一条，更接近原始阅读顺序。
+        let mut merged = false;
+        for j in (i + 1)..arr.len() {
+            if arr[j].get("role").and_then(Value::as_str) != Some("user") {
+                continue;
+            }
+            match arr[j].get("content").cloned() {
+                Some(Value::String(s)) => {
+                    arr[j]["content"] = Value::String(format!("{body}\n\n---\n\n{s}"));
+                }
+                Some(Value::Array(parts)) => {
+                    // 多块 content 不在这里拍平（那是 sanitize_messages 的职责），
+                    // 只在最前面插一块文本，其余块原样保留。
+                    let mut out = vec![json!({"type":"text","text":body})];
+                    out.extend(parts);
+                    arr[j]["content"] = Value::Array(out);
+                }
+                _ => {
+                    arr[j]["content"] = Value::String(body.clone());
+                }
+            }
+            merged = true;
+            break;
+        }
+        // 后面没有 user（探针、只有单条 system 的请求）：把这条 system 直接改名叫 user，
+        // 至少别让长正文继续以 system 身份发出去。
+        if !merged {
+            arr[i]["role"] = Value::String("user".to_string());
+            arr[i]["content"] = Value::String(body);
+        }
+        moved += 1;
+    }
+    if moved > 0 {
+        degraded.push(format!("long-system-demoted {moved} 处"));
+        return Some(moved);
+    }
+    None
+}
+
 /// 最大强度归一化（11128 自愈重试用，见 [`build_upstream_body_ex`]）。
 ///
 /// 上游对「负载是不是官方客户端发的」有一套**不公开**的规则，且会随策略变动：
@@ -1902,6 +2002,21 @@ fn build_upstream_body_ex(
     if aggressive {
         sanitize_messages_aggressive(&mut sanitized, degraded);
     }
+    // 🔴 长 system 降级：`11-128 unapproved channel` 的真解（2026-11-09 实测）。
+    //
+    // 生效范围刻意不对称：
+    // - **国内版走默认路径**：已实测确认该版按「system + 长正文」判渠道，且每个新会话
+    //   如果不预先降级，都要先撞一次 400 再自愈 —— 与 `neutralize_domestic_fingerprints`
+    //   主动清洗的取舍一致。
+    // - **国际版只在自愈重试里做**：那边没有同等的实测证据（且国际版另有
+    //   `first message is not system prompt` 这道独立约束），默认路径不动它，
+    //   免得在没证据的情况下扩大改动面。
+    //
+    // 位置放在最末、`ensure_leading_system` 之前：先让上面几步把角色/内容块收敛好
+    // 再统一降级，且国际版补出来的占位 system 不会被误当成「长 system」。
+    if aggressive || edition == Edition::Domestic {
+        demote_long_system(&mut sanitized, degraded);
+    }
     ensure_leading_system(edition, &mut sanitized, degraded);
     let mut body = json!({
         "model": model,
@@ -3331,13 +3446,15 @@ async fn chat_completions(
                 format!(
                     "上游拒绝了这次请求：{edition_label}网关判定「负载不合规」\
                      （11128 Illegal API invocation from an unapproved channel）。\
-                     已自动做最大强度归一化（角色收敛 + 去 name + 抹身份声明）重试仍被拦。\
                      这不是账号失效、不是频率超限，换账号也不会解决。\n\
-                     这是腾讯风控在识别系统提示词里的**第三方 agent 身份声明**（典型是 \
-                     `DeepSeek Harness`）。DSH 用户可关掉原生开关 `includeHarnessIdentity`，\
-                     或把系统提示词里那段身份声明删掉，即可恢复。\n\
-                     若已关掉仍报，请开启 `~/.wb-switch/DEBUG_DUMP` 后复现一次，\
-                     把 `~/.wb-switch/dump/last-request.json` 发给作者定位。"
+                     已自动重试并做过适配（含长 system 降级）。若仍被拦，通常是上游在\
+                     **按请求形状**判非官方客户端，而不是某个具体关键词 ——\
+                     实测：同一份提示词从 `system` 改成 `user` 就能通过，\
+                     而删掉其中的品牌名 / 身份声明**毫无作用**。\n\
+                     可以这样做：① 缩短系统提示词（实测 2 000 字以内可通过）；\
+                     ② 换个模型或新开会话再试；③ 稍后重试，上游规则会漂移。\n\
+                     若需要定位，请开启 `~/.wb-switch/DEBUG_DUMP` 后复现一次，\
+                     把 `~/.wb-switch/dump/last-request.json` 发给作者。"
                 )
             } else {
                 format!(
@@ -4779,6 +4896,111 @@ mod tests {
 
     /// 11128 自愈：最大强度归一化要把非标准角色、name、数组 content 全部收敛。
     #[test]
+    /// 长 system 降级：超阈值的 system 正文要挪进紧随其后的 user，system 留占位。
+    ///
+    /// 这是 2026-11-09 实测出的 `11-128 unapproved channel` 真解：
+    /// 同一份正文作 `system` 被拦、作 `user` 通过（3/3），而抹品牌词/裸 `@` 均无效。
+    #[test]
+    fn demotes_long_system_into_following_user() {
+        let long = "指令".repeat(SYSTEM_DEMOTE_THRESHOLD); // 远超阈值
+        let mut msgs = json!([
+            {"role":"system","content": long},
+            {"role":"user","content":"hi"},
+        ]);
+        let mut degraded = Vec::new();
+        assert_eq!(demote_long_system(&mut msgs, &mut degraded), Some(1));
+
+        // system 只剩一行无害占位（国际版要求首条必须是 system，不能删）。
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], DEMOTED_SYSTEM_PLACEHOLDER);
+
+        // 原正文完整保留、并入紧随其后的 user —— 内容一个字都不能丢。
+        let merged = msgs[1]["content"].as_str().unwrap();
+        assert!(merged.contains("指令"), "正文必须保留");
+        assert!(merged.ends_with("hi"), "原 user 内容应留在末尾");
+        assert!(degraded.iter().any(|d| d.starts_with("long-system-demoted")));
+    }
+
+    /// 短 system **绝不能**动：那是用户资产，而且实测 2 000 字以内本来就通过。
+    #[test]
+    fn keeps_short_system_intact() {
+        let mut msgs = json!([
+            {"role":"system","content":"You are a helpful assistant."},
+            {"role":"user","content":"hi"},
+        ]);
+        let mut degraded = Vec::new();
+        assert_eq!(demote_long_system(&mut msgs, &mut degraded), None);
+        assert_eq!(msgs[0]["content"], "You are a helpful assistant.");
+        assert_eq!(msgs[1]["content"], "hi");
+        assert!(degraded.is_empty());
+    }
+
+    /// 阈值边界：恰好等于阈值不动，超一个字符才动。
+    #[test]
+    fn system_demote_threshold_is_inclusive() {
+        let at = "x".repeat(SYSTEM_DEMOTE_THRESHOLD);
+        let mut m1 = json!([{"role":"system","content": at},{"role":"user","content":"hi"}]);
+        let mut d1 = Vec::new();
+        assert_eq!(demote_long_system(&mut m1, &mut d1), None, "等于阈值不该动");
+
+        let over = "x".repeat(SYSTEM_DEMOTE_THRESHOLD + 1);
+        let mut m2 = json!([{"role":"system","content": over},{"role":"user","content":"hi"}]);
+        let mut d2 = Vec::new();
+        assert_eq!(demote_long_system(&mut m2, &mut d2), Some(1), "超阈值要动");
+    }
+
+    /// 后面没有 user（探针/单条 system）时，退化成把 system 改名叫 user。
+    #[test]
+    fn demotes_lone_system_to_user() {
+        let long = "y".repeat(SYSTEM_DEMOTE_THRESHOLD + 10);
+        let mut msgs = json!([{"role":"system","content": long}]);
+        let mut degraded = Vec::new();
+        assert_eq!(demote_long_system(&mut msgs, &mut degraded), Some(1));
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[0]["content"].as_str().unwrap().len(), long.len(), "正文不丢");
+    }
+
+    /// 数组 content 的 user：正文插到最前面，其余块保持原样。
+    #[test]
+    fn demotes_long_system_before_array_content() {
+        let long = "z".repeat(SYSTEM_DEMOTE_THRESHOLD + 10);
+        let mut msgs = json!([
+            {"role":"system","content": long},
+            {"role":"user","content":[{"type":"text","text":"keep-me"}]},
+        ]);
+        let mut degraded = Vec::new();
+        assert_eq!(demote_long_system(&mut msgs, &mut degraded), Some(1));
+        let parts = msgs[1]["content"].as_array().unwrap();
+        assert_eq!(parts[0]["text"].as_str().unwrap().len(), long.len());
+        assert_eq!(parts[1]["text"], "keep-me", "原有块不能被吞掉");
+    }
+
+    /// 国内版默认路径就要降级（不等撞 400）；国际版默认路径不动，只在自愈时降级。
+    #[test]
+    fn domestic_body_demotes_long_system_by_default() {
+        let long = "w".repeat(SYSTEM_DEMOTE_THRESHOLD + 10);
+        let incoming = json!({
+            "model": "deepseek-v4.1-flash",
+            "messages": [
+                {"role":"system","content": long},
+                {"role":"user","content":"hi"},
+            ],
+        });
+
+        let mut d_dom = Vec::new();
+        let dom = build_upstream_body(&incoming, Edition::Domestic, &mut d_dom);
+        assert_eq!(dom["messages"][0]["content"], DEMOTED_SYSTEM_PLACEHOLDER);
+        assert!(d_dom.iter().any(|d| d.starts_with("long-system-demoted")));
+
+        // 国际版默认路径：保持原样。
+        let mut d_intl = Vec::new();
+        let intl = build_upstream_body(&incoming, Edition::International, &mut d_intl);
+        assert!(
+            intl["messages"][0]["content"].as_str().unwrap().starts_with('w'),
+            "国际版默认路径不该改写长 system"
+        );
+    }
+
     fn aggressive_normalize_collapses_payload_shape() {
         let mut msgs = json!([
             {"role":"developer","content":"sys","name":"dsh-agent"},
